@@ -19,6 +19,9 @@ node_modules/
 logs/
 *.log
 
+# === 运行时依赖（非源码） ===
+dota2-frontend/resources/
+
 # === 系统文件 ===
 .DS_Store
 Thumbs.db

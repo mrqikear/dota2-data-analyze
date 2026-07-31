@@ -1,6 +1,10 @@
 @echo off
 setlocal enabledelayedexpansion
 
+REM Kill any running processes that lock dist_electron files
+taskkill /f /im electron.exe >nul 2>&1
+taskkill /f /im java.exe >nul 2>&1
+
 REM 1. Detect Node 22 Environment
 if exist "E:\easyClaw\QClaw\v0.2.26.557\resources\node\node.exe" (
     set "PATH=E:\easyClaw\QClaw\v0.2.26.557\resources\node;%PATH%"
@@ -51,21 +55,20 @@ if not exist "dota2-frontend\resources\jre" (
 )
 echo.
 
-REM 5. Build Frontend & Electron App
+REM 5. Clean & Build Frontend & Portable App
 echo [3/4] Building Frontend Vue Assets...
+if exist "dota2-frontend\dist_electron" rmdir /s /q "dota2-frontend\dist_electron"
 cd /d dota2-frontend
 call yarn build
 
 echo.
-echo [4/4] Packaging Electron Setup (.exe)...
+echo [4/4] Packaging Single Portable Executable (Dota2DataAnalyze.exe)...
 call yarn electron:build
 
 cd /d ..
 echo.
 echo ========================================================
 echo ===== Packaging Complete! =====
-echo Output Directory: dota2-frontend\dist_electron\
-echo Setup Executable: Dota2DataAnalyze-Setup-1.0.0.exe
+echo Output File: dota2-frontend\dist_electron\Dota2DataAnalyze.exe
 echo ========================================================
 echo.
-pause

@@ -1,8 +1,9 @@
-﻿import { defineConfig } from 'vite'
+import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { resolve } from 'path'
 
 export default defineConfig({
+  base: './', // 关键：Electron file:// 协议本地相对路径
   plugins: [vue()],
   resolve: {
     alias: { '@': resolve(__dirname, 'src') }

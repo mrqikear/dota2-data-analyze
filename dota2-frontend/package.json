@@ -46,7 +46,10 @@
       }
     ],
     "win": {
-      "target": "nsis"
+      "target": "portable"
+    },
+    "portable": {
+      "artifactName": "Dota2DataAnalyze.exe"
     },
     "nsis": {
       "oneClick": false,

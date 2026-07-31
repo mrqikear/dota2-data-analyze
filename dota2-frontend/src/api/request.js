@@ -3,7 +3,8 @@ import { ElMessage } from 'element-plus'
 import { getToken, removeToken } from '@/utils/auth'
 import router from '@/router'
 
-const request = axios.create({ baseURL: '/api', timeout: 15000 })
+const baseURL = import.meta.env.DEV ? '/api' : 'http://127.0.0.1:9601'
+const request = axios.create({ baseURL, timeout: 15000 })
 
 request.interceptors.request.use(config => {
   const t = getToken()
