@@ -1,28 +1,28 @@
 @echo off
 setlocal enabledelayedexpansion
 
-REM Dota2数据分析 - 前端启动脚本 (使用 Node 22)
-REM 双击运行即可
+REM Dota2数据分析 - 前端启动脚本
+REM 智能检测 Node 22 环境
 
-set PROJECT_DIR=D:\dota2-data-analyze\dota2-frontend
+if exist "E:\easyClaw\QClaw\v0.2.26.557\resources\node\node.exe" (
+    set "PATH=E:\easyClaw\QClaw\v0.2.26.557\resources\node;%PATH%"
+)
 
 echo ====================================
 echo  Dota2数据分析 - 前端开发服务器
 echo ====================================
 echo.
 
-pushd "E:\easyClaw\QClaw\v0.2.26.557\resources\node"
-for /f %%i in ('.\node.exe --version') do set NODE_VER=%%i
-popd
-echo Node: %NODE_VER%
-echo Project: %PROJECT_DIR%
+for /f %%i in ('node --version') do set NODE_VER=%%i
+echo Node: !NODE_VER!
+echo Project: %~dp0dota2-frontend
 echo.
 
-cd /d "%PROJECT_DIR%"
+cd /d "%~dp0dota2-frontend"
 
 echo 启动 Vite 开发服务器 (Ctrl+C 停止)
 echo ====================================
 echo.
 
-yarn22 dev
+call yarn dev
 pause

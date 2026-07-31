@@ -4,11 +4,12 @@ const fs = require('fs');
 const http = require('http');
 const { spawn } = require('child_process');
 
+let splashWindow;
 let mainWindow;
 let javaProcess;
 
-// 检测后端端口 (9601) 是否就绪
-function checkBackendReady(callback, retries = 30) {
+// 高频检测后端端口 (9601) 是否就绪 (200ms 轮询)
+function checkBackendReady(callback, retries = 100) {
   if (retries <= 0) {
     callback(false);
     return;
@@ -17,13 +18,94 @@ function checkBackendReady(callback, retries = 30) {
     if (res.statusCode >= 200 && res.statusCode < 400) {
       callback(true);
     } else {
-      setTimeout(() => checkBackendReady(callback, retries - 1), 1000);
+      setTimeout(() => checkBackendReady(callback, retries - 1), 200);
     }
   });
   req.on('error', () => {
-    setTimeout(() => checkBackendReady(callback, retries - 1), 1000);
+    setTimeout(() => checkBackendReady(callback, retries - 1), 200);
   });
   req.end();
+}
+
+function createSplashWindow() {
+  splashWindow = new BrowserWindow({
+    width: 480,
+    height: 320,
+    frame: false,
+    transparent: true,
+    alwaysOnTop: true,
+    center: true,
+    resizable: false,
+    show: true,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+    },
+  });
+
+  const splashHtml = `
+  <!DOCTYPE html>
+  <html>
+  <head>
+    <meta charset="UTF-8">
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        background: #12141d;
+        color: #ffffff;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 100vh;
+        border-radius: 12px;
+        box-shadow: 0 16px 32px rgba(0,0,0,0.6);
+        border: 1px solid #2a2e3d;
+        user-select: none;
+      }
+      .logo {
+        font-size: 26px;
+        font-weight: 700;
+        background: linear-gradient(135deg, #ff4e50, #f9d423);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        margin-bottom: 8px;
+      }
+      .sub {
+        font-size: 13px;
+        color: #8a8f9d;
+        margin-bottom: 24px;
+      }
+      .spinner {
+        width: 32px;
+        height: 32px;
+        border: 3px solid rgba(255, 255, 255, 0.1);
+        border-radius: 50%;
+        border-top-color: #ff4e50;
+        animation: spin 0.8s ease-in-out infinite;
+      }
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
+      .tip {
+        margin-top: 16px;
+        font-size: 12px;
+        color: #616675;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="logo">Dota 2 数据分析平台</div>
+    <div class="sub">正在极速加载引擎与本地数据库...</div>
+    <div class="spinner"></div>
+    <div class="tip">首次启动准备中，请稍候</div>
+  </body>
+  </html>
+  `;
+
+  splashWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(splashHtml)}`);
 }
 
 function startBackend() {
@@ -58,15 +140,25 @@ function startBackend() {
 
   const duckdbFile = path.join(userDataPath, 'dota2_analyze.duckdb');
   console.log('[Electron] DuckDB 文件路径:', duckdbFile);
-  console.log('[Electron] Java 路径:', javaBin);
-  console.log('[Electron] Jar 包路径:', jarPath);
 
   const env = Object.assign({}, process.env, {
     DUCKDB_PATH: duckdbFile
   });
 
+  // 🚀 JVM 桌面端极速启动优化参数
+  const jvmArgs = [
+    '-Xms128m',
+    '-Xmx512m',
+    '-XX:+TieredCompilation',
+    '-XX:TieredStopAtLevel=1',
+    '-Dspring.jmx.enabled=false',
+    '-Dspring.main.lazy-initialization=true',
+    '-jar', jarPath,
+    '--spring.profiles.active=dev'
+  ];
+
   try {
-    javaProcess = spawn(javaBin, ['-jar', jarPath, '--spring.profiles.active=dev'], {
+    javaProcess = spawn(javaBin, jvmArgs, {
       windowsHide: true,
       cwd: isPackaged ? app.getPath('userData') : path.join(__dirname, '../..'),
       env: env
@@ -88,7 +180,7 @@ function startBackend() {
   }
 }
 
-function createWindow() {
+function createMainWindow() {
   mainWindow = new BrowserWindow({
     width: 1366,
     height: 868,
@@ -96,6 +188,7 @@ function createWindow() {
     minHeight: 700,
     title: 'Dota 2 数据分析平台',
     autoHideMenuBar: true,
+    show: false, // 准备好后再显示
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -109,19 +202,31 @@ function createWindow() {
     mainWindow.loadURL('http://localhost:5200');
   }
 
+  mainWindow.once('ready-to-show', () => {
+    if (splashWindow && !splashWindow.isDestroyed()) {
+      splashWindow.destroy();
+    }
+    mainWindow.show();
+  });
+
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
 }
 
 app.on('ready', () => {
+  // 1. 0.1s 极速弹出 Splash 加载动画屏
+  createSplashWindow();
+
+  // 2. 启动 JVM 后端
   startBackend();
-  // 等待后端连接就绪后创建主窗口
+
+  // 3. 高频监听后端就绪
   checkBackendReady((ready) => {
     if (!ready) {
       console.warn('[Electron] 后端响应超时，仍然尝试打开界面');
     }
-    createWindow();
+    createMainWindow();
   });
 });
 

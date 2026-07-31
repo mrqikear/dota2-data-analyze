@@ -1,0 +1,24 @@
+﻿# === 构建产物 ===
+target/
+dist/
+dist_electron/
+node_modules/
+*.jar
+*.war
+*.class
+
+# === DuckDB 数据文件 ===
+*.duckdb
+*.duckdb.wal
+
+# === IDE ===
+.idea/
+*.iml
+
+# === 日志 ===
+logs/
+*.log
+
+# === 系统文件 ===
+.DS_Store
+Thumbs.db
