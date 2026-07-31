@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.dota2.entity.dao.MatchDetailDao">
+    <resultMap id="BaseResultMap" type="com.dota2.entity.entity.MatchDetailEntity">
+        <id column="match_id" property="matchId" />
+        <result column="radiant_win" property="radiantWin" />
+        <result column="duration" property="duration" />
+        <result column="game_mode" property="gameMode" />
+        <result column="lobby_type" property="lobbyType" />
+        <result column="radiant_score" property="radiantScore" />
+        <result column="dire_score" property="direScore" />
+        <result column="radiant_name" property="radiantName" />
+        <result column="dire_name" property="direName" />
+        <result column="first_blood_time" property="firstBloodTime" />
+        <result column="raw_json" property="rawJson" />
+        <result column="sync_status" property="syncStatus" />
+        <result column="sync_error" property="syncError" />
+        <result column="created_time" property="createdTime" />
+        <result column="updated_time" property="updatedTime" />
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        match_id, radiant_win, duration, game_mode, lobby_type,
+        radiant_score, dire_score, radiant_name, dire_name, first_blood_time,
+        raw_json, sync_status, sync_error, created_time, updated_time
+    </sql>
+
+    <!-- query match IDs that need detail sync: no match_detail OR raw_json is null -->
+    <select id="selectMissingDetailIds" resultType="java.lang.Long">
+        SELECT mm.match_id
+        FROM match_main mm
+        LEFT JOIN match_detail md ON mm.match_id = md.match_id
+        WHERE md.match_id IS NULL
+           OR md.raw_json IS NULL
+        ORDER BY mm.match_id DESC
+        LIMIT #{limit}
+    </select>
+    <!-- count match IDs that need detail sync -->
+    <select id="countMissingDetailIds" resultType="long">
+        SELECT COUNT(*)
+        FROM match_main mm
+        LEFT JOIN match_detail md ON mm.match_id = md.match_id
+        WHERE md.match_id IS NULL
+           OR md.raw_json IS NULL
+    </select>
+</mapper>

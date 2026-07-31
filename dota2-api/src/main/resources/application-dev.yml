@@ -1,0 +1,16 @@
+spring:
+  datasource:
+    url: jdbc:duckdb:${DUCKDB_PATH:./data/dota2_analyze.duckdb}
+    driver-class-name: org.duckdb.DuckDBDriver
+
+logging:
+  level:
+    com.dota2: debug
+
+steam:
+  api-key: B5BCA6DCA3EF402141658B5261315F93
+
+app:
+  proxy:
+    host: 127.0.0.1
+    port: 7897

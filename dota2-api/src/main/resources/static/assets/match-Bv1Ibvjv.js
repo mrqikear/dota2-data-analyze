@@ -1,0 +1,1 @@
+import{t as e}from"./request-DHf-99Sf.js";var t=t=>e.get(`/match/sync/`+t),n=t=>e.post(`/match/page`,t);export{t as n,n as t};

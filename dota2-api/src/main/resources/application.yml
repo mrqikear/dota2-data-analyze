@@ -1,0 +1,28 @@
+server:
+  port: 9601
+
+spring:
+  application:
+    name: dota2-data-analyze
+  profiles:
+    active: dev
+  mvc:
+    pathmatch:
+      matching-strategy: ant_path_matcher
+
+mybatis-plus:
+  mapper-locations: classpath*:mapper/**/*Mapper.xml
+  typeAliasesPackage: com.dota2.entity.entity
+  global-config:
+    id-type: 0
+    field-strategy: 1
+    db-column-underline: true
+    logic-not-delete-value: 0
+    logic-delete-value: 1
+  configuration:
+    map-underscore-to-camel-case: true
+    cache-enabled: false
+
+logging:
+  level:
+    com.dota2: debug

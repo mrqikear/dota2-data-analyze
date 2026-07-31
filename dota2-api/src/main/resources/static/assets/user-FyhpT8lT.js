@@ -1,0 +1,1 @@
+import{t as e}from"./request-pgHjxR4S.js";var t=t=>e.post(`/user/login`,t),n=t=>e.post(`/user/page`,t),r=t=>e.post(`/user/addUser`,t),i=t=>e.post(`/user/editUser`,t),a=t=>e.post(`/user/deleteUser`,t);export{n as a,t as i,a as n,i as r,r as t};

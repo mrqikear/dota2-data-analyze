@@ -1,0 +1,18 @@
+version: '3'
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: dota2-analyze-db
+    environment:
+      POSTGRES_DB: dota2_analyze
+      POSTGRES_USER: dota2
+      POSTGRES_PASSWORD: dota2_analyze
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./sql/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  pgdata:

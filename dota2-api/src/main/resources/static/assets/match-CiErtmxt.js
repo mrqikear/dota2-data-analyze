@@ -1,0 +1,1 @@
+import{t as e}from"./request-BVBdhWV4.js";var t=t=>e.get(`/match/sync/`+t),n=t=>e.post(`/match/page`,t);export{t as n,n as t};

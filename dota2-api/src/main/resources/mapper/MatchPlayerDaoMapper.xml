@@ -1,0 +1,375 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.dota2.entity.dao.MatchPlayerDao">
+
+    <resultMap id="MatchPlayerVoMap" type="com.dota2.entity.vo.MatchPlayerVo">
+        <id property="id" column="id"/>
+        <result property="matchId" column="match_id"/>
+        <result property="steamId" column="steam_id"/>
+        <result property="heroId" column="hero_id"/>
+        <result property="kills" column="kills"/>
+        <result property="deaths" column="deaths"/>
+        <result property="assists" column="assists"/>
+        <result property="win" column="win"/>
+        <result property="goldPerMin" column="gold_per_min"/>
+        <result property="xpPerMin" column="xp_per_min"/>
+        <result property="lastHits" column="last_hits"/>
+        <result property="denies" column="denies"/>
+        <result property="heroDamage" column="hero_damage"/>
+        <result property="towerDamage" column="tower_damage"/>
+        <result property="heroHealing" column="hero_healing"/>
+        <result property="startTime" column="start_time"/>
+        <result property="duration" column="duration"/>
+        <result property="gameMode" column="game_mode"/>
+        <result property="lobbyType" column="lobby_type"/>
+        <result property="createdTime" column="created_time"/>
+        <result property="mvpSteamId" column="mvp_steam_id"/>
+        <result property="fmvpSteamId" column="fmvp_steam_id"/>
+    </resultMap>
+
+    <select id="pageWithMain" resultMap="MatchPlayerVoMap">
+        SELECT mp.*, mm.start_time, mm.duration, mm.game_mode, mm.lobby_type,
+               mm.mvp_steam_id AS mvp_steam_id, mm.fmvp_steam_id AS fmvp_steam_id
+        FROM match_player mp
+        LEFT JOIN match_main mm ON mp.match_id = mm.match_id
+        <if test="parsed != null">
+            LEFT JOIN match_detail md ON mp.match_id = md.match_id
+        </if>
+        <where>
+            <if test="steamId != null and steamId != ''">
+                AND mp.steam_id = #{steamId}
+            </if>
+            <if test="gameMode != null">
+                AND mm.game_mode = #{gameMode}
+            </if>
+            <if test="heroId != null">
+                AND mp.hero_id = #{heroId}
+            </if>
+            <if test="parsed != null and parsed == true">
+                AND md.raw_json IS NOT NULL AND md.raw_json LIKE '%damage_inflictor%'
+            </if>
+            <if test="parsed != null and parsed == false">
+                AND (md.raw_json IS NULL OR md.raw_json NOT LIKE '%damage_inflictor%')
+            </if>
+        </where>
+        <choose>
+            <when test="sortField != null and sortField != '' and sortOrder != null and sortOrder != ''">
+                ORDER BY ${sortField} ${sortOrder}
+            </when>
+            <otherwise>
+                ORDER BY mm.start_time DESC NULLS LAST, mp.id DESC
+            </otherwise>
+        </choose>
+        OFFSET #{offset} LIMIT #{limit}
+    </select>
+
+    <select id="countWithMain" resultType="long">
+        SELECT COUNT(*)
+        FROM match_player mp
+        LEFT JOIN match_main mm ON mp.match_id = mm.match_id
+        <if test="parsed != null">
+            LEFT JOIN match_detail md ON mp.match_id = md.match_id
+        </if>
+        <where>
+            <if test="steamId != null and steamId != ''">
+                AND mp.steam_id = #{steamId}
+            </if>
+            <if test="gameMode != null">
+                AND mm.game_mode = #{gameMode}
+            </if>
+            <if test="heroId != null">
+                AND mp.hero_id = #{heroId}
+            </if>
+            <if test="parsed != null and parsed == true">
+                AND md.raw_json IS NOT NULL AND md.raw_json LIKE '%damage_inflictor%'
+            </if>
+            <if test="parsed != null and parsed == false">
+                AND (md.raw_json IS NULL OR md.raw_json NOT LIKE '%damage_inflictor%')
+            </if>
+        </where>
+    </select>
+
+    <select id="listPlayersByMatch" resultMap="MatchPlayerVoMap">
+        SELECT mp.id, mp.match_id, mp.steam_id, sa.nick_name, mp.hero_id, mp.kills, mp.deaths, mp.assists, mp.win,
+               mp.gold_per_min, mp.xp_per_min, mp.last_hits, mp.denies, mp.hero_damage, mp.tower_damage, mp.hero_healing,
+               mm.start_time, mm.duration, mm.game_mode, mm.lobby_type, mp.created_time
+        FROM match_player mp
+        LEFT JOIN steam_account sa ON mp.steam_id = sa.steam_id
+        LEFT JOIN match_main mm ON mp.match_id = mm.match_id
+        WHERE mp.match_id = #{matchId}
+        ORDER BY mp.hero_id
+    </select>
+
+    <!-- ========== Hero Stats (Analysis Module) ========== -->
+
+    <resultMap id="HeroStatsMap" type="com.dota2.entity.vo.HeroStatsVo">
+        <result property="heroId" column="hero_id"/>
+        <result property="games" column="games"/>
+        <result property="winRate" column="win_rate"/>
+        <result property="avgKills" column="avg_kills"/>
+        <result property="avgDeaths" column="avg_deaths"/>
+        <result property="avgAssists" column="avg_assists"/>
+        <result property="avgGoldPerMin" column="avg_gpm"/>
+        <result property="avgXpPerMin" column="avg_xpm"/>
+        <result property="recentGames20" column="recent_games_20"/>
+        <result property="recentWinRate20" column="recent_win_rate_20"/>
+        <result property="recentKills20" column="recent_kills_20"/>
+        <result property="recentDeaths20" column="recent_deaths_20"/>
+        <result property="recentAssists20" column="recent_assists_20"/>
+        <result property="recentGames50" column="recent_games_50"/>
+        <result property="recentWinRate50" column="recent_win_rate_50"/>
+        <result property="recentKills50" column="recent_kills_50"/>
+        <result property="recentDeaths50" column="recent_deaths_50"/>
+        <result property="recentAssists50" column="recent_assists_50"/>
+    </resultMap>
+
+    <select id="queryHeroStats" resultMap="HeroStatsMap">
+        SELECT
+            t.hero_id,
+            COUNT(*) as games,
+            ROUND(100.0 * SUM(CASE WHEN t.win THEN 1 ELSE 0 END) / COUNT(*), 1) as win_rate,
+            ROUND(AVG(t.kills), 2) as avg_kills,
+            ROUND(AVG(t.deaths), 2) as avg_deaths,
+            ROUND(AVG(t.assists), 2) as avg_assists,
+            ROUND(AVG(t.gold_per_min), 0) as avg_gpm,
+            ROUND(AVG(t.xp_per_min), 0) as avg_xpm,
+            COUNT(*) FILTER (WHERE t.rn &lt;= 20) as recent_games_20,
+            ROUND(100.0 * SUM(CASE WHEN t.rn &lt;= 20 AND t.win THEN 1 ELSE 0 END)
+                / NULLIF(SUM(CASE WHEN t.rn &lt;= 20 THEN 1 ELSE 0 END), 0), 1) as recent_win_rate_20,
+            ROUND(AVG(t.kills) FILTER (WHERE t.rn &lt;= 20), 2) as recent_kills_20,
+            ROUND(AVG(t.deaths) FILTER (WHERE t.rn &lt;= 20), 2) as recent_deaths_20,
+            ROUND(AVG(t.assists) FILTER (WHERE t.rn &lt;= 20), 2) as recent_assists_20,
+            COUNT(*) FILTER (WHERE t.rn &lt;= 50) as recent_games_50,
+            ROUND(100.0 * SUM(CASE WHEN t.rn &lt;= 50 AND t.win THEN 1 ELSE 0 END)
+                / NULLIF(SUM(CASE WHEN t.rn &lt;= 50 THEN 1 ELSE 0 END), 0), 1) as recent_win_rate_50,
+            ROUND(AVG(t.kills) FILTER (WHERE t.rn &lt;= 50), 2) as recent_kills_50,
+            ROUND(AVG(t.deaths) FILTER (WHERE t.rn &lt;= 50), 2) as recent_deaths_50,
+            ROUND(AVG(t.assists) FILTER (WHERE t.rn &lt;= 50), 2) as recent_assists_50
+        FROM (
+            SELECT mp.*, mm.start_time,
+                ROW_NUMBER() OVER (
+                    PARTITION BY mp.steam_id, mp.hero_id
+                    ORDER BY mm.start_time DESC NULLS LAST
+                ) as rn
+            FROM match_player mp
+            INNER JOIN match_main mm ON mp.match_id = mm.match_id
+            WHERE mp.steam_id = #{steamId}
+            <if test="matchType != null">
+                <choose>
+                    <when test="matchType == 2">
+                        AND mm.lobby_type = 0
+                        AND mm.game_mode != 23
+                    </when>
+                    <when test="matchType == 3">
+                        AND mm.lobby_type = 7
+                        AND mm.game_mode != 23
+                    </when>
+                    <when test="matchType == 4">
+                        AND mm.game_mode = 23
+                    </when>
+                </choose>
+            </if>
+            <if test="startTime != null">
+                AND mm.start_time &gt;= #{startTime}
+            </if>
+            <if test="endTime != null">
+                AND mm.start_time &lt;= #{endTime}
+            </if>
+        ) t
+        GROUP BY t.hero_id
+        HAVING COUNT(*) &gt;= #{minMatches}
+        ORDER BY
+        <choose>
+            <when test="sortField == 'winRate'">win_rate</when>
+            <otherwise>games</otherwise>
+        </choose>
+        <choose>
+            <when test="sortOrder == 'ASC'">ASC</when>
+            <otherwise>DESC</otherwise>
+        </choose>
+    </select>
+
+    <!-- ========== Related Matches ========== -->
+    <!-- teammates: same team, same match -->
+    <select id="findRelatedMatchIds" resultType="java.lang.Long">
+        SELECT mp.match_id
+        FROM match_player mp
+        WHERE mp.steam_id IN
+        <foreach collection="steamIds" item="sid" open="(" close=")" separator=",">
+            #{sid}
+        </foreach>
+        GROUP BY mp.match_id
+        HAVING COUNT(DISTINCT mp.steam_id) = #{count}
+        ORDER BY mp.match_id DESC
+        LIMIT 50
+    </select>
+
+    <!-- opponents: selected accounts played AGAINST an opponent steam_id -->
+    <select id="findOpponentMatchIds" resultType="java.lang.Long">
+        SELECT mp1.match_id
+        FROM match_player mp1
+        WHERE mp1.steam_id IN
+        <foreach collection="steamIds" item="sid" open="(" close=")" separator=",">
+            #{sid}
+        </foreach>
+        AND EXISTS (
+            SELECT 1 FROM match_player mp2
+            WHERE mp2.match_id = mp1.match_id
+            AND mp2.steam_id = #{opponentId}
+            AND mp2.win IS DISTINCT FROM mp1.win
+        )
+        GROUP BY mp1.match_id
+        HAVING COUNT(DISTINCT mp1.steam_id) = #{count}
+        ORDER BY mp1.match_id DESC
+        LIMIT 50
+    </select>
+
+    <!-- solo MVP/FMVP stats from match_main fields -->
+    <select id="querySoloMvpStats" resultType="java.util.LinkedHashMap">
+        SELECT
+            #{steamId} AS steam_id,
+            COUNT(*) FILTER (WHERE mm.mvp_steam_id = #{steamId}) AS mvp,
+            COUNT(*) FILTER (WHERE mm.fmvp_steam_id = #{steamId}) AS fmvp
+        FROM match_main mm
+        WHERE mm.match_id IN (
+            SELECT mp.match_id FROM match_player mp
+            JOIN match_main mm2 ON mp.match_id = mm2.match_id
+            WHERE mp.steam_id = #{steamId}
+            AND NOT EXISTS (
+                SELECT 1 FROM match_player mp2
+                WHERE mp2.match_id = mp.match_id
+                AND mp2.steam_id IN
+                <foreach collection="excludeIds" item="sid" open="(" close=")" separator=",">
+                    #{sid}
+                </foreach>
+            )
+            <if test="gameMode != null">AND mm2.game_mode = #{gameMode}</if>
+        )
+        <if test="gameMode != null">AND mm.game_mode = #{gameMode}</if>
+    </select>
+
+    <!-- solo aggregate stats: total games and wins for solo matches only -->
+    <select id="querySoloPlayerStats" resultType="java.util.LinkedHashMap">
+        SELECT
+            COUNT(*) AS total,
+            SUM(CASE WHEN mp.win = true THEN 1 ELSE 0 END) AS wins,
+            SUM(CASE WHEN mp.win = false THEN 1 ELSE 0 END) AS losses
+        FROM match_player mp
+        JOIN match_main mm ON mp.match_id = mm.match_id
+        WHERE mp.steam_id = #{steamId}
+        <if test="gameMode != null">AND mm.game_mode = #{gameMode}</if>
+        AND NOT EXISTS (
+            SELECT 1 FROM match_player mp2
+            WHERE mp2.match_id = mp.match_id
+            AND mp2.steam_id IN
+            <foreach collection="excludeIds" item="sid" open="(" close=")" separator=",">
+                #{sid}
+            </foreach>
+        )
+    </select>
+
+    <!-- aggregate player stats: total games, wins, losses, by mode -->
+    <select id="queryPlayerStats" resultType="java.util.LinkedHashMap">
+        SELECT
+            COUNT(*) AS total,
+            SUM(CASE WHEN mp.win = true THEN 1 ELSE 0 END) AS wins,
+            SUM(CASE WHEN mp.win = false THEN 1 ELSE 0 END) AS losses
+            <if test="byMode == true">
+                , CASE WHEN mm.game_mode = 23 THEN 'turbo' ELSE 'pub' END AS game_mode
+            </if>
+        FROM match_player mp
+        JOIN match_main mm ON mp.match_id = mm.match_id
+        WHERE mp.steam_id = #{steamId}
+        <if test="gameMode != null">
+            AND mm.game_mode = #{gameMode}
+        </if>
+        <if test="byMode == true">
+            GROUP BY CASE WHEN mm.game_mode = 23 THEN 'turbo' ELSE 'pub' END
+        </if>
+    </select>
+
+    <!-- per-hero stats for a steam_id (MVP/FMVP computed from score via CTE) -->
+    <select id="queryPlayerHeroStats" resultType="java.util.LinkedHashMap">
+        WITH target_matches AS (
+            SELECT DISTINCT mp.match_id FROM match_player mp
+            JOIN match_main mm ON mp.match_id = mm.match_id
+            WHERE mp.steam_id = #{steamId}
+            <if test="gameMode != null">AND mm.game_mode = #{gameMode}</if>
+        ),
+        match_scores AS (
+            SELECT mp.match_id, mp.steam_id, mp.hero_id, mp.win, mp.kills, mp.deaths, mp.assists,
+                (mp.kills + mp.assists + 0.0) * GREATEST(mp.gold_per_min, 1) / (GREATEST(mp.deaths, 0) + 1) + mp.hero_damage / 100.0 AS score
+            FROM match_player mp
+            WHERE mp.match_id IN (SELECT match_id FROM target_matches)
+        ),
+        ranked AS (
+            SELECT *,
+                ROW_NUMBER() OVER (PARTITION BY match_id, win ORDER BY score DESC) AS rn
+            FROM match_scores
+        )
+        SELECT
+            mp.hero_id,
+            COUNT(*) AS games,
+            SUM(CASE WHEN mp.win THEN 1 ELSE 0 END) AS wins,
+            ROUND(AVG(mp.kills), 1) AS avg_kills,
+            ROUND(AVG(mp.deaths), 1) AS avg_deaths,
+            ROUND(AVG(mp.assists), 1) AS avg_assists,
+            COALESCE(SUM(CASE WHEN mp.win AND r.rn = 1 AND r.steam_id = mp.steam_id THEN 1 ELSE 0 END), 0) AS mvp,
+            COALESCE(SUM(CASE WHEN NOT mp.win AND r.rn = 1 AND r.steam_id = mp.steam_id THEN 1 ELSE 0 END), 0) AS fmvp
+        FROM match_player mp
+        JOIN match_main mm ON mp.match_id = mm.match_id
+        LEFT JOIN ranked r ON r.match_id = mp.match_id AND r.steam_id = mp.steam_id
+        WHERE mp.steam_id = #{steamId}
+        <if test="gameMode != null">AND mm.game_mode = #{gameMode}</if>
+        GROUP BY mp.hero_id
+        ORDER BY games DESC
+    </select>
+
+    <!-- find match IDs for a given steam_id (used for rawJson-based opponent check) -->
+    <select id="findMatchIdsBySteamId" resultType="java.lang.Long">
+        SELECT mp.match_id
+        FROM match_player mp
+        WHERE mp.steam_id = #{steamId}
+        ORDER BY mp.match_id DESC
+        LIMIT #{limit}
+    </select>
+
+    <!-- count solo matches for pagination -->
+    <select id="countSoloMatchIds" resultType="java.lang.Long">
+        SELECT COUNT(*) FROM (
+            SELECT mp.match_id
+            FROM match_player mp
+            JOIN match_main mm ON mp.match_id = mm.match_id
+            WHERE mp.steam_id = #{steamId}
+            <if test="gameMode != null">AND mm.game_mode = #{gameMode}</if>
+            AND NOT EXISTS (
+                SELECT 1 FROM match_player mp2
+                WHERE mp2.match_id = mp.match_id
+                AND mp2.steam_id IN
+                <foreach collection="excludeIds" item="sid" open="(" close=")" separator=",">
+                    #{sid}
+                </foreach>
+            )
+        ) t
+    </select>
+
+    <!-- solo: the target steam_id played alone (none of other tracked accounts in same match) -->
+    <select id="findSoloMatchIds" resultType="java.lang.Long">
+        SELECT mp.match_id
+        FROM match_player mp
+        JOIN match_main mm ON mp.match_id = mm.match_id
+        WHERE mp.steam_id = #{steamId}
+        <if test="gameMode != null">AND mm.game_mode = #{gameMode}</if>
+        AND NOT EXISTS (
+            SELECT 1 FROM match_player mp2
+            WHERE mp2.match_id = mp.match_id
+            AND mp2.steam_id IN
+            <foreach collection="excludeIds" item="sid" open="(" close=")" separator=",">
+                #{sid}
+            </foreach>
+        )
+        ORDER BY mp.match_id DESC
+        OFFSET #{offset} LIMIT #{limit}
+    </select>
+
+</mapper>

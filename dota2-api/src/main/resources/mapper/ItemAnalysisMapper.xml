@@ -1,0 +1,247 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.dota2.entity.dao.ItemAnalysisDao">
+
+    <!-- ============================================================ -->
+    <!-- 4.1 出门装组合                                                -->
+    <!-- ============================================================ -->
+    <select id="queryStartingItems" resultType="java.util.LinkedHashMap">
+        WITH player_data AS (
+            SELECT
+                md.match_id,
+                (p->>'account_id')::bigint + 76561197960265728 AS steam_id,
+                (p->>'win')::boolean AS win,
+                p->'purchase_log' AS purchase_log
+            FROM match_detail md,
+                 LATERAL jsonb_array_elements(md.raw_json::jsonb->'players') AS p
+            WHERE md.sync_status = 2
+              AND md.raw_json IS NOT NULL
+              AND p->>'account_id' IS NOT NULL
+              AND p->'purchase_log' IS NOT NULL
+              AND p->>'purchase_log' != 'null'
+              AND jsonb_typeof(p->'purchase_log') = 'array'
+            <if test="steamId != null and steamId != ''">
+              AND (p->>'account_id')::bigint + 76561197960265728 = #{steamId}::bigint
+            </if>
+        ),
+        starting_items AS (
+            SELECT
+                match_id, steam_id, win,
+                jsonb_agg(DISTINCT entry->>'key' ORDER BY entry->>'key') AS items
+            FROM player_data,
+                 LATERAL jsonb_array_elements(purchase_log) AS entry
+            WHERE (entry->>'time')::int &lt;= 0
+              AND entry->>'key' NOT IN (${excludeItems})
+            GROUP BY match_id, steam_id, win
+        )
+        SELECT
+            items::text AS items_json,
+            COUNT(*)::bigint AS games,
+            SUM(CASE WHEN win THEN 1 ELSE 0 END)::bigint AS wins
+        FROM starting_items
+        WHERE items IS NOT NULL AND jsonb_array_length(items) > 0
+        GROUP BY items
+        ORDER BY COUNT(*) DESC
+        LIMIT 30
+    </select>
+
+    <!-- ============================================================ -->
+    <!-- 4.3 单件装备分析 — 从 item_0~5 提取 ID 并统计                 -->
+    <!-- ============================================================ -->
+    <select id="queryItemStats" resultType="java.util.LinkedHashMap">
+        SELECT
+            item_id,
+            COUNT(*)::bigint AS games,
+            SUM(CASE WHEN win THEN 1 ELSE 0 END)::bigint AS wins,
+            ROUND(100.0 * SUM(CASE WHEN win THEN 1 ELSE 0 END) / COUNT(*), 1) AS win_rate
+        FROM (
+            SELECT DISTINCT
+                md.match_id,
+                (p->>'account_id')::bigint + 76561197960265728 AS steam_id,
+                (p->>'hero_id')::int AS hero_id,
+                (p->>'win')::boolean AS win,
+                item.value::int AS item_id
+            FROM match_detail md,
+                 LATERAL jsonb_array_elements(md.raw_json::jsonb->'players') AS p,
+                 LATERAL jsonb_array_elements(
+                     jsonb_build_array(p->'item_0', p->'item_1', p->'item_2',
+                                       p->'item_3', p->'item_4', p->'item_5')
+                 ) AS item
+            WHERE md.sync_status = 2
+              AND md.raw_json IS NOT NULL
+              AND p->>'account_id' IS NOT NULL
+              AND item.value IS NOT NULL
+              AND item.value::text != '0'
+              AND item.value::text != ''
+              AND item.value::text != 'null'
+            <if test="steamId != null and steamId != ''">
+              AND (p->>'account_id')::bigint + 76561197960265728 = #{steamId}::bigint
+            </if>
+            <if test="heroId != null">
+              AND (p->>'hero_id')::int = #{heroId}
+            </if>
+        ) t
+        GROUP BY item_id
+        ORDER BY COUNT(*) DESC
+        LIMIT 100
+    </select>
+
+    <!-- ============================================================ -->
+    <!-- 4.4 总场次统计（用于胜率贡献基准）                              -->
+    <!-- ============================================================ -->
+    <select id="queryTotalStats" resultType="java.util.LinkedHashMap">
+        SELECT
+            COUNT(*)::bigint AS total_games,
+            SUM(CASE WHEN win THEN 1 ELSE 0 END)::bigint AS total_wins
+        FROM (
+            SELECT DISTINCT
+                md.match_id,
+                (p->>'win')::boolean AS win
+            FROM match_detail md,
+                 LATERAL jsonb_array_elements(md.raw_json::jsonb->'players') AS p
+            WHERE md.sync_status = 2
+              AND md.raw_json IS NOT NULL
+              AND p->>'account_id' IS NOT NULL
+            <if test="steamId != null and steamId != ''">
+              AND (p->>'account_id')::bigint + 76561197960265728 = #{steamId}::bigint
+            </if>
+            <if test="heroId != null">
+              AND (p->>'hero_id')::int = #{heroId}
+            </if>
+        ) t
+    </select>
+
+    <!-- ============================================================ -->
+    <!-- 4.2 大件出装路线 — purchase_log 按时间排序取前 N 件           -->
+    <!-- ============================================================ -->
+    <select id="queryBuildRoutes" resultType="java.util.LinkedHashMap">
+        WITH player_data AS (
+            SELECT
+                md.match_id,
+                (p->>'account_id')::bigint + 76561197960265728 AS steam_id,
+                (p->>'hero_id')::int AS hero_id,
+                (p->>'win')::boolean AS win,
+                p->'purchase_log' AS purchase_log
+            FROM match_detail md,
+                 LATERAL jsonb_array_elements(md.raw_json::jsonb->'players') AS p
+            WHERE md.sync_status = 2
+              AND md.raw_json IS NOT NULL
+              AND p->>'account_id' IS NOT NULL
+              AND p->'purchase_log' IS NOT NULL
+              AND p->>'purchase_log' != 'null'
+              AND jsonb_typeof(p->'purchase_log') = 'array'
+            <if test="steamId != null and steamId != ''">
+              AND (p->>'account_id')::bigint + 76561197960265728 = #{steamId}::bigint
+            </if>
+            <if test="heroId != null">
+              AND (p->>'hero_id')::int = #{heroId}
+            </if>
+        ),
+        purchased_items AS (
+            SELECT
+                match_id, steam_id, win,
+                entry->>'key' AS item_key,
+                (entry->>'time')::int AS purchase_time,
+                ROW_NUMBER() OVER (
+                    PARTITION BY match_id, steam_id
+                    ORDER BY (entry->>'time')::int
+                ) AS rn
+            FROM player_data,
+                 LATERAL jsonb_array_elements(purchase_log) AS entry
+            WHERE (entry->>'time')::int > 0   -- exclude starting items
+              AND entry->>'key' NOT IN (${excludeItems})
+        ),
+        build_sequences AS (
+            SELECT
+                match_id, steam_id, win,
+                jsonb_agg(item_key ORDER BY purchase_time) AS items,
+                jsonb_agg(purchase_time ORDER BY purchase_time) AS times,
+                COUNT(*) AS item_count
+            FROM purchased_items
+            WHERE rn &lt;= #{topN}
+            GROUP BY match_id, steam_id, win
+        )
+        SELECT
+            items::text AS items_json,
+            times::text AS times_json,
+            COUNT(*)::bigint AS games,
+            SUM(CASE WHEN win THEN 1 ELSE 0 END)::bigint AS wins,
+            ROUND(AVG(item_count), 1) AS avg_items,
+            ROUND(AVG((times->>0)::int), 0) AS avg_first_time
+        FROM build_sequences
+        WHERE jsonb_array_length(items) >= 2
+        GROUP BY items, times
+        ORDER BY COUNT(*) DESC
+        LIMIT 20
+    </select>
+
+    <!-- ============================================================ -->
+    <!-- 4.6 流派识别数据 — 每位玩家的最终装备列表 + 胜负              -->
+    <!-- ============================================================ -->
+    <select id="queryArchetypeData" resultType="java.util.LinkedHashMap">
+        SELECT
+            (p->>'account_id')::bigint + 76561197960265728 AS steam_id,
+            (p->>'hero_id')::int AS hero_id,
+            (p->>'win')::boolean AS win,
+            jsonb_build_array(p->'item_0', p->'item_1', p->'item_2',
+                              p->'item_3', p->'item_4', p->'item_5') AS items_json,
+            (p->>'gold_per_min')::int AS gold_per_min,
+            (p->>'xp_per_min')::int AS xp_per_min,
+            (p->>'kills')::int AS kills,
+            (p->>'deaths')::int AS deaths,
+            (p->>'assists')::int AS assists,
+            (p->>'hero_damage')::bigint AS hero_damage,
+            (p->>'tower_damage')::bigint AS tower_damage,
+            (p->>'gold_spent')::int AS gold_spent
+        FROM match_detail md,
+             LATERAL jsonb_array_elements(md.raw_json::jsonb->'players') AS p
+        WHERE md.sync_status = 2
+          AND md.raw_json IS NOT NULL
+          AND p->>'account_id' IS NOT NULL
+          AND p->'item_0' IS NOT NULL
+        <if test="steamId != null and steamId != ''">
+          AND (p->>'account_id')::bigint + 76561197960265728 = #{steamId}::bigint
+        </if>
+        <if test="heroId != null">
+          AND (p->>'hero_id')::int = #{heroId}
+        </if>
+        LIMIT 2000
+    </select>
+
+    <!-- ============================================================ -->
+    <!-- 4.5 个人装备使用统计（用于全球对比）                           -->
+    <!-- ============================================================ -->
+    <select id="queryPersonalItemUsage" resultType="java.util.LinkedHashMap">
+        SELECT
+            item_id,
+            COUNT(*)::bigint AS games,
+            ROUND(100.0 * SUM(CASE WHEN win THEN 1 ELSE 0 END) / COUNT(*), 1) AS win_rate,
+            SUM(CASE WHEN win THEN 1 ELSE 0 END)::bigint AS wins
+        FROM (
+            SELECT DISTINCT
+                md.match_id,
+                (p->>'account_id')::bigint + 76561197960265728 AS steam_id,
+                (p->>'hero_id')::int AS hero_id,
+                (p->>'win')::boolean AS win,
+                item.value::int AS item_id
+            FROM match_detail md,
+                 LATERAL jsonb_array_elements(md.raw_json::jsonb->'players') AS p,
+                 LATERAL jsonb_array_elements(
+                     jsonb_build_array(p->'item_0', p->'item_1', p->'item_2',
+                                       p->'item_3', p->'item_4', p->'item_5')
+                 ) AS item
+            WHERE md.sync_status = 2
+              AND md.raw_json IS NOT NULL
+              AND p->>'account_id' IS NOT NULL
+              AND item.value IS NOT NULL
+              AND item.value::text != '0'
+              AND item.value::text != ''
+              AND item.value::text != 'null'
+              AND (p->>'hero_id')::int = #{heroId}
+              AND (p->>'account_id')::bigint + 76561197960265728 = #{steamId}::bigint
+        ) t
+        GROUP BY item_id
+        ORDER BY COUNT(*) DESC
+    </select>
+
+</mapper>

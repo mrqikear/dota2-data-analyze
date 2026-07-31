@@ -1,0 +1,1 @@
+import{t as e}from"./request-BVBdhWV4.js";var t=t=>e.post(`/steamAccount/page`,t),n=()=>e.get(`/steamAccount/listAll`),r=t=>e.get(`/steamAccount/sync/`+t),i=t=>e.post(`/steamAccount/addAccount`,t),a=t=>e.post(`/steamAccount/deleteAccount`,t);export{r as a,t as i,a as n,n as r,i as t};
